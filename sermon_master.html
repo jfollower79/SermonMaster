@@ -1,0 +1,436 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>설교 마스터 v1.8 (최종 적응형)</title>
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --accent: #3498db;
+            --success: #27ae60;
+            --bg: #f5f6f7;
+            --white: #ffffff;
+            --border: #e1e4e8;
+            --memo-color: #e67e22;
+        }
+
+        body {
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+            background-color: var(--bg);
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            color: #333;
+        }
+
+        /* 레이아웃 구조 */
+        .sidebar {
+            width: 280px;
+            background: var(--white);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.3s ease;
+            z-index: 100;
+        }
+
+        .sidebar-right { border-left: 1px solid var(--border); width: 320px; }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #fff;
+            position: relative;
+            overflow-y: auto;
+        }
+
+        .mobile-header {
+            display: none;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 15px;
+            background: var(--white);
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 150;
+        }
+
+        .editor-container {
+            padding: 40px 60px;
+            max-width: 900px;
+            margin: 0 auto;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .title-input {
+            width: 100%;
+            border: none;
+            border-bottom: 2px solid #eee;
+            font-size: 2.2rem;
+            font-weight: 800;
+            margin-bottom: 20px;
+            padding: 10px 0;
+            outline: none;
+        }
+
+        #sContent {
+            outline: none;
+            font-size: 1.25rem;
+            line-height: 2.1;
+            min-height: 70vh;
+        }
+
+        /* 플로팅 에디터 */
+        #floatingEditor {
+            display: none;
+            position: absolute;
+            background: #222;
+            color: white;
+            padding: 5px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            z-index: 1000;
+            gap: 5px;
+        }
+
+        .float-btn {
+            background: transparent;
+            border: none;
+            color: white;
+            padding: 5px 12px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            border-radius: 4px;
+        }
+
+        .card { background: #fdfdfd; border: 1px solid #eee; border-radius: 12px; padding: 15px; margin-bottom: 15px; }
+        .input-group { margin-bottom: 12px; }
+        label { display: block; font-size: 0.75rem; font-weight: 700; color: #888; margin-bottom: 4px; }
+        select, input, button { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 0.95rem; }
+        .btn-success { background: var(--success); color: white; border: none; font-weight: bold; cursor: pointer; }
+
+        .memo-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background-color: var(--memo-color);
+            border-radius: 50%;
+            margin: 0 4px;
+            cursor: help;
+            vertical-align: middle;
+            position: relative;
+        }
+
+        /* 반응형 설정 */
+        @media (max-width: 1024px) {
+            .sidebar-right { position: fixed; right: 0; height: 100%; transform: translateX(100%); }
+            .sidebar-left { position: fixed; left: 0; height: 100%; transform: translateX(-100%); }
+            .sidebar.active { transform: translateX(0); }
+            .mobile-header { display: flex; }
+            .editor-container { padding: 20px; }
+            .overlay.active { display: block; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 90; }
+        }
+
+        .sermon-item { padding: 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid #f1f3f5; cursor: pointer; background: #fff; }
+        .sermon-item.active { background: #e7f3ff; border-color: var(--accent); font-weight: bold; }
+        
+        h3 { font-size: 0.75rem; color: #aaa; text-transform: uppercase; letter-spacing: 1px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+
+<div id="overlay" onclick="closeSidebars()"></div>
+
+<!-- 왼쪽: 보관함 -->
+<div class="sidebar sidebar-left" id="sidebarLeft">
+    <div style="padding: 15px;">
+        <h3>Archive</h3>
+        <input type="text" id="search" onkeyup="renderList()" placeholder="통합 검색..." style="margin-bottom:10px;">
+        <div id="sermonList"></div>
+        <button onclick="createNew()" style="margin-top:10px; background:white; font-weight:bold;">+ 새 설교 작성</button>
+    </div>
+    <div style="height: 250px; overflow-y: auto; padding: 10px; border-top: 1px solid #eee;">
+        <h3 style="color:var(--memo-color);">Memos</h3>
+        <div id="globalMemoList"></div>
+    </div>
+</div>
+
+<!-- 중앙: 에디터 -->
+<div class="main-content">
+    <div class="mobile-header">
+        <button onclick="toggleSidebar('left')" style="width:auto; padding:8px 12px;">📂 목록</button>
+        <span style="font-weight:bold; color:var(--primary);">Sermon Master</span>
+        <button onclick="toggleSidebar('right')" style="width:auto; padding:8px 12px;">⚙️ 도구</button>
+    </div>
+    <div class="editor-container">
+        <input type="text" id="sTitle" class="title-input" placeholder="제목 없는 설교">
+        <div id="sContent" contenteditable="true" placeholder="말씀을 기록하세요..."></div>
+    </div>
+    <div id="floatingEditor">
+        <button class="float-btn" onclick="execCmd('bold')">B</button>
+        <button class="float-btn" onclick="execCmd('hiliteColor', '#ffff00')">🟨</button>
+        <button class="float-btn" onclick="insertMemoDot()">● 메모</button>
+        <button class="float-btn" onclick="execCmd('removeFormat')">❌</button>
+    </div>
+</div>
+
+<!-- 오른쪽: 조작 패널 -->
+<div class="sidebar sidebar-right" id="sidebarRight">
+    <div style="padding: 20px;">
+        <h3>Management</h3>
+        <div class="card">
+            <label>설교 날짜</label>
+            <input type="date" id="sDate" style="margin-bottom:10px;">
+            <button class="btn-success" onclick="saveSermon()">💾 저장하기</button>
+        </div>
+
+        <div class="card">
+            <label>📖 성경 인용</label>
+            <div class="input-group">
+                <label>성경 파일 (text/ 폴더 내)</label>
+                <select id="bibleFileSelect">
+                    <option value="online">온라인 (개역한글)</option>
+                    <option value="개역개정.txt">개역개정</option>
+                    <option value="AEB.txt">쉬운성경(AEB)</option>
+                    <option value="HRR.txt">로마자성경(HRR)</option>
+                </select>
+            </div>
+            <div class="input-group">
+                <select id="bBook" onchange="updateChapters()"></select>
+            </div>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-bottom:10px;">
+                <select id="bChap" onchange="updateVerses()"></select>
+                <select id="bVStart"></select>
+            </div>
+            <button onclick="insertBibleText()" style="background:var(--accent); color:white; border:none; font-weight:bold; cursor:pointer;">📥 본문 삽입</button>
+        </div>
+
+        <div class="card">
+            <label>🎨 설정</label>
+            <div class="input-group">
+                <label>글자 크기 (px)</label>
+                <input type="number" id="fSize" value="20" onchange="applyStyle()">
+            </div>
+            <div class="input-group">
+                <label>메모 점 색상</label>
+                <input type="color" id="memoColorPicker" value="#e67e22" onchange="updateMemoColor()">
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const bibleAbbrMap = {"창세기":"창","출애굽기":"출","레위기":"레","민수기":"민","신명기":"신","여호수아":"수","사사기":"삿","루기":"룻","사무엘상":"삼상","사무엘하":"삼하","열왕기상":"왕상","열왕기하":"왕하","역대상":"대상","역대하":"대하","에스라":"라","느헤미야":"느","에스더":"에","욥기":"욥","시편":"시","잠언":"잠","전도서":"전","아가":"아","이사야":"사","예레미야":"렘","예레미야애가":"애","에스겔":"겔","다니엘":"단","호세아":"호","요엘":"욜","아모스":"암","오바댜":"옵","요나":"욘","미가":"미","나훔":"나","하박국":"합","스바냐":"습","학개":"학","스가랴":"슥","말라기":"말","마태복음":"마","마가복음":"막","누가복음":"눅","요한복음":"요","사도행전":"행","로마서":"롬","고린도전서":"고전","고린도후서":"고후","갈라디아서":"갈","에베소서":"엡","빌립보서":"빌","골로새서":"골","데살로니가전서":"살전","데살로니가후서":"살후","디모데전서":"딤전","디모데후서":"딤후","디도서":"딛","빌레몬서":"몬","히브리서":"히","야고보서":"약","베드로전서":"벧전","베드로후서":"벧후","요한일서":"요일","요한이서":"요이","요한삼서":"요삼","유다서":"유","요한계시록":"계"};
+    
+    // 성경 검색용 약어 (파일 내 코드와 매칭용)
+    const bibleFileCodes = {"창세기":"Gen","출애굽기":"Exo","레위기":"Lev","민수기":"Num","신명기":"Deu","여호수아":"Jos","사사기":"Jdg","루기":"Rut","사무엘상":"1Sa","사무엘하":"2Sa","열왕기상":"1Ki","열왕기하":"2Ki","역대상":"1Ch","역대하":"2Ch","에스라":"Ezr","느헤미야":"Neh","에스더":"Est","욥기":"Job","시편":"Psa","잠언":"Pro","전도서":"Ecc","아가":"Sng","이사야":"Isa","예레미야":"Jer","예레미야애가":"Lam","에스겔":"Ezk","다니엘":"Dan","호세아":"Hos","요엘":"Jol","아모스":"Amo","오바댜":"Oba","요나":"Jon","미가":"Mic","나훔":"Nam","하박국":"Hab","스바냐":"Zep","학개":"Hag","스가랴":"Zec","말라기":"Mal","마태복음":"Mat","마가복음":"Mrk","누가복음":"Luk","요한복음":"Jhn","사도행전":"Act","로마서":"Rom","고린도전서":"1Co","고린도후서":"2Co","갈라디아서":"Gal","에베소서":"Eph","빌립보서":"Php","골로새서":"Col","데살로니가전서":"1Th","데살로니가후서":"2Th","디모데전서":"1Ti","디모데후서":"2Ti","디도서":"Tit","빌레몬서":"Phm","히브리서":"Heb","야고보서":"Jas","베드로전서":"1Pe","베드로후서":"2Pe","요한일서":"1Jn","요한이서":"2Jn","요한삼서":"3Jn","유다서":"Jud","요한계시록":"Rev"};
+
+    const bibleIndices = {"창세기":1,"출애굽기":2,"레위기":3,"민수기":4,"신명기":5,"여호수아":6,"사사기":7,"루기":8,"사무엘상":9,"사무엘하":10,"열왕기상":11,"열왕기하":12,"역대상":13,"역대하":14,"에스라":15,"느헤미야":16,"에스더":17,"욥기":18,"시편":19,"잠언":20,"전도서":21,"아가":22,"이사야":23,"예레미야":24,"예레미야애가":25,"에스겔":26,"다니엘":27,"호세아":28,"요엘":29,"아모스":30,"오바댜":31,"요나":32,"미가":33,"나훔":34,"하박국":35,"스바냐":36,"학개":37,"스가랴":38,"말라기":39,"마태복음":40,"마가복음":41,"누가복음":42,"요한복음":43,"사도행전":44,"로마서":45,"고린도전서":46,"고린도후서":47,"갈라디아서":48,"에베소서":49,"빌립보서":50,"골로새서":51,"데살로니가전서":52,"데살로니가후서":53,"디모데전서":54,"디모데후서":55,"디도서":56,"빌레몬서":57,"히브리서":58,"야고보서":59,"베드로전서":60,"베드로후서":61,"요한일서":62,"요한이서":63,"요한삼서":64,"유다서":65,"요한계시록":66};
+
+    let sermons = JSON.parse(localStorage.getItem('sermon_db_v1.8') || '[]');
+    let activeId = null;
+
+    window.onload = () => {
+        const bSelect = document.getElementById('bBook');
+        Object.keys(bibleIndices).forEach(name => {
+            let opt = document.createElement('option');
+            opt.value = name; opt.innerText = name;
+            bSelect.appendChild(opt);
+        });
+        updateChapters();
+        renderList();
+        document.getElementById('sDate').value = new Date().toISOString().split('T')[0];
+        document.getElementById('sContent').addEventListener('mouseup', handleSelection);
+    };
+
+    function toggleSidebar(side) {
+        const target = side === 'left' ? 'sidebarLeft' : 'sidebarRight';
+        document.getElementById(target).classList.toggle('active');
+        document.getElementById('overlay').classList.toggle('active');
+    }
+
+    function closeSidebars() {
+        document.getElementById('sidebarLeft').classList.remove('active');
+        document.getElementById('sidebarRight').classList.remove('active');
+        document.getElementById('overlay').classList.remove('active');
+    }
+
+    function handleSelection() {
+        const sel = window.getSelection();
+        const editor = document.getElementById('floatingEditor');
+        if (sel.rangeCount > 0 && sel.toString().length > 0) {
+            const rect = sel.getRangeAt(0).getBoundingClientRect();
+            editor.style.display = 'flex';
+            editor.style.top = (rect.top + window.scrollY - 55) + 'px';
+            editor.style.left = (rect.left + window.scrollX) + 'px';
+        } else { editor.style.display = 'none'; }
+    }
+
+    function execCmd(cmd, val = null) { document.execCommand(cmd, false, val); }
+
+    function updateMemoColor() {
+        const color = document.getElementById('memoColorPicker').value;
+        document.documentElement.style.setProperty('--memo-color', color);
+    }
+
+    function applyStyle() {
+        const size = document.getElementById('fSize').value;
+        document.getElementById('sContent').style.fontSize = size + 'px';
+    }
+
+    function insertMemoDot() {
+        const text = prompt("메모 내용을 입력하세요:");
+        if (text) {
+            const sel = window.getSelection();
+            const range = sel.getRangeAt(0);
+            range.collapse(false);
+            const dot = document.createElement('span');
+            dot.className = 'memo-dot';
+            dot.title = text;
+            dot.setAttribute('data-memo', text);
+            dot.setAttribute('contenteditable', 'false');
+            range.insertNode(dot);
+            range.insertNode(document.createTextNode('\u00A0'));
+            saveSermon(true); 
+        }
+    }
+
+    async function insertBibleText() {
+        const fileName = document.getElementById('bibleFileSelect').value;
+        const bName = document.getElementById('bBook').value;
+        const chap = document.getElementById('bChap').value;
+        const vS = document.getElementById('bVStart').value;
+        const abbr = bibleAbbrMap[bName];
+        let foundText = "";
+
+        if (fileName === "online") {
+            try {
+                const bIdx = bibleIndices[bName];
+                const res = await fetch(`https://bolls.life/get-text/KRV/${bIdx}/${chap}/`);
+                const data = await res.json();
+                const verse = data.find(v => v.verse == vS);
+                if (verse) foundText = verse.text.replace(/^\d+\s+/, '');
+            } catch(e) { alert("온라인 성경을 불러올 수 없습니다. 인터넷을 확인하세요."); return; }
+        } else {
+            try {
+                const res = await fetch(`text/${fileName}`);
+                if (!res.ok) throw new Error();
+                const blob = await res.blob();
+                // EUC-KR과 UTF-8 범용 대응을 위해 텍스트로 디코딩 시도
+                const reader = new FileReader();
+                foundText = await new Promise((resolve) => {
+                    reader.onload = () => {
+                        const content = reader.result;
+                        const lines = content.split('\n');
+                        const bCode = bibleFileCodes[bName];
+                        const searchKey = `${bCode} ${chap}:${vS}`;
+                        const line = lines.find(l => l.trim().startsWith(searchKey));
+                        if (line) {
+                            // Gen 1:1 [본문] 형식에서 본문만 추출 및 숫자 제거
+                            const cleaned = line.replace(/^[A-Za-z0-9]+\s\d+:\d+\s+/, '').replace(/^\d+\s+/, '');
+                            resolve(cleaned);
+                        } else resolve(null);
+                    };
+                    reader.readAsText(blob, "EUC-KR"); // 기본 EUC-KR 시도
+                });
+            } catch(e) { alert("text/ 폴더 내의 성경 파일을 찾을 수 없습니다."); return; }
+        }
+
+        if (foundText) {
+            const formatted = `${foundText} (${abbr}${chap}:${vS})`;
+            document.execCommand('insertHTML', false, formatted + "<br><br>");
+        } else {
+            alert("해당 구절을 찾을 수 없습니다.");
+        }
+    }
+
+    function saveSermon(silent = false) {
+        const title = document.getElementById('sTitle').value || "제목 없음";
+        const data = { id: activeId || Date.now(), title, date: document.getElementById('sDate').value, content: document.getElementById('sContent').innerHTML };
+        if(activeId) {
+            const idx = sermons.findIndex(s => s.id === activeId);
+            sermons[idx] = data;
+        } else {
+            sermons.unshift(data);
+            activeId = data.id;
+        }
+        localStorage.setItem('sermon_db_v1.8', JSON.stringify(sermons));
+        renderList();
+        if(!silent) alert("저장되었습니다.");
+    }
+
+    function renderList() {
+        const q = document.getElementById('search').value.toLowerCase();
+        const listDiv = document.getElementById('sermonList');
+        const filtered = sermons.filter(s => s.title.toLowerCase().includes(q) || s.content.toLowerCase().includes(q));
+
+        listDiv.innerHTML = filtered.map(s => `
+            <div class="sermon-item ${s.id === activeId ? 'active' : ''}" onclick="loadSermon(${s.id})">
+                <div style="font-size:0.7rem; color:#aaa;">${s.date}</div>
+                <div>${s.title}</div>
+            </div>
+        `).join('');
+
+        const memoListDiv = document.getElementById('globalMemoList');
+        memoListDiv.innerHTML = "";
+        sermons.forEach(s => {
+            const temp = document.createElement('div');
+            temp.innerHTML = s.content;
+            temp.querySelectorAll('.memo-dot').forEach(dot => {
+                const mText = dot.getAttribute('data-memo');
+                if (mText.toLowerCase().includes(q)) {
+                    memoListDiv.innerHTML += `<div class="memo-list-item" onclick="loadSermon(${s.id})">
+                        <span class="memo-tag">[${s.title}]</span> ${mText}
+                    </div>`;
+                }
+            });
+        });
+    }
+
+    function loadSermon(id) {
+        const s = sermons.find(s => s.id === id);
+        if(s) {
+            activeId = s.id;
+            document.getElementById('sTitle').value = s.title;
+            document.getElementById('sDate').value = s.date;
+            document.getElementById('sContent').innerHTML = s.content;
+            renderList();
+            if (window.innerWidth <= 1024) closeSidebars();
+        }
+    }
+
+    function createNew() {
+        activeId = null;
+        document.getElementById('sTitle').value = "";
+        document.getElementById('sContent').innerHTML = "";
+        document.getElementById('sDate').value = new Date().toISOString().split('T')[0];
+        renderList();
+        if (window.innerWidth <= 1024) closeSidebars();
+    }
+
+    function updateChapters() {
+        const select = document.getElementById('bChap');
+        select.innerHTML = "";
+        for(let i=1; i<=150; i++) {
+            let opt = document.createElement('option'); opt.value = i; opt.innerText = i + "장";
+            select.appendChild(opt);
+        }
+        updateVerses();
+    }
+    function updateVerses() {
+        const select = document.getElementById('bVStart');
+        select.innerHTML = "";
+        for(let i=1; i<=176; i++) {
+            let opt = document.createElement('option'); opt.value = i; opt.innerText = i + "절";
+            select.appendChild(opt);
+        }
+    }
+</script>
+</body>
+</html>
