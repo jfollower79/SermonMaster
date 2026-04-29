@@ -1,0 +1,266 @@
+html_content = """
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>설교 마스터 v1.9 (Split & Sync)</title>
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --accent: #3498db;
+            --bg: #f8f9fa;
+            --white: #ffffff;
+            --border: #e1e4e8;
+            --memo-color: #e67e22;
+        }
+
+        body {
+            font-family: 'Pretendard', -apple-system, sans-serif;
+            background-color: var(--bg);
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* 레이아웃 */
+        .sidebar { width: 260px; background: var(--white); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+        .main-container { flex: 1; display: flex; flex-direction: column; background: #fff; overflow: hidden; }
+        .control-panel { width: 280px; background: var(--white); border-left: 1px solid var(--border); padding: 20px; }
+
+        /* 중앙 스플릿 뷰 */
+        .bible-viewer {
+            height: 300px; /* 초기 높이 */
+            min-height: 150px;
+            max-height: 600px;
+            border-bottom: 4px solid var(--bg);
+            overflow-y: auto;
+            background: #fffcf5;
+            padding: 20px;
+            resize: vertical; /* 창 크기 조절 가능 */
+            position: relative;
+        }
+
+        .editor-section {
+            flex: 1;
+            overflow-y: auto;
+            padding: 40px 60px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 성경 구절 스타일 */
+        .verse-line {
+            padding: 5px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1.1rem;
+            line-height: 1.8;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .verse-line:hover { background: #eef7ff; }
+        .verse-num { color: var(--accent); font-weight: bold; font-size: 0.8rem; margin-right: 10px; }
+        .cite-btn { float: right; font-size: 0.7rem; background: var(--accent); color: white; border: none; border-radius: 4px; padding: 2px 6px; cursor: pointer; }
+
+        /* 에디터 */
+        .title-input { width: 100%; border: none; border-bottom: 2px solid #eee; font-size: 2rem; font-weight: 800; margin-bottom: 15px; outline: none; }
+        #sContent { flex: 1; outline: none; font-size: 1.2rem; line-height: 2; min-height: 500px; }
+
+        /* 기타 UI */
+        .card { background: #fdfdfd; border: 1px solid #eee; border-radius: 10px; padding: 15px; margin-bottom: 15px; }
+        select, input, button { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 0.9rem; margin-bottom: 8px; }
+        .btn-success { background: var(--success, #27ae60); color: white; border: none; font-weight: bold; cursor: pointer; }
+        .btn-sync { background: var(--accent); color: white; border: none; cursor: pointer; margin-bottom: 5px; }
+
+        /* 반응형 */
+        @media (max-width: 1024px) {
+            .sidebar, .control-panel { display: none; }
+            .editor-section { padding: 20px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="sidebar">
+    <div style="padding: 15px; flex: 1; overflow-y: auto;">
+        <h3>Archive</h3>
+        <input type="text" id="search" onkeyup="renderList()" placeholder="검색...">
+        <div id="sermonList"></div>
+    </div>
+    <div style="padding: 15px; border-top: 1px solid #eee;">
+        <button class="btn-sync" onclick="exportData()">📤 전체 백업 (JSON)</button>
+        <button class="btn-sync" onclick="importData()" style="background:#95a5a6;">📥 데이터 복구</button>
+    </div>
+</div>
+
+<div class="main-container">
+    <div class="bible-viewer" id="bibleViewer">
+        <div style="display: flex; gap: 10px; margin-bottom: 15px; position: sticky; top: 0; background: #fffcf5; padding: 10px 0; z-index: 10;">
+            <select id="bibleFile" style="width: 150px;">
+                <option value="개역개정.txt">개역개정</option>
+                <option value="AEB.txt">쉬운성경</option>
+            </select>
+            <select id="bBook" onchange="loadFullChapter()" style="width: 120px;"></select>
+            <select id="bChap" onchange="loadFullChapter()" style="width: 80px;"></select>
+            <span style="font-size: 0.7rem; color: #999; padding-top: 15px;">* 구절 클릭 시 원고에 자동 인용</span>
+        </div>
+        <div id="bibleContent">성경 권과 장을 선택하세요.</div>
+    </div>
+
+    <div class="editor-section">
+        <input type="text" id="sTitle" class="title-input" placeholder="설교 제목을 입력하세요">
+        <div id="sContent" contenteditable="true"></div>
+    </div>
+</div>
+
+<div class="control-panel">
+    <h3>Setting</h3>
+    <div class="card">
+        <label style="font-size: 0.8rem;">글자 크기</label>
+        <input type="number" id="fSize" value="20" onchange="applyStyle()">
+        <button class="btn-success" onclick="saveSermon()">💾 원고 저장하기</button>
+    </div>
+    <div id="globalMemoList" style="height: 300px; overflow-y: auto;"></div>
+</div>
+
+<script>
+    const bibleAbbrMap = {"창세기":"창","출애굽기":"출","레위기":"레","민수기":"민","신명기":"신","여호수아":"수","사사기":"삿","루기":"룻","사무엘상":"삼상","사무엘하":"삼하","열왕기상":"왕상","열왕기하":"왕하","역대상":"대상","역대하":"대하","에스라":"라","느헤미야":"느","에스더":"에","욥기":"욥","시편":"시","잠언":"잠","전도서":"전","아가":"아","이사야":"사","예레미야":"렘","예레미야애가":"애","에스겔":"겔","다니엘":"단","호세아":"호","요엘":"욜","아모스":"암","오바댜":"옵","요나":"욘","미가":"미","나훔":"나","하박국":"합","스바냐":"습","학개":"학","스가랴":"슥","말라기":"말","마태복음":"마","마가복음":"막","누가복음":"눅","요한복음":"요","사도행전":"행","로마서":"롬","고린도전서":"고전","고린도후서":"고후","갈라디아서":"갈","에베소서":"엡","빌립보서":"빌","골로새서":"골","데살로니가전서":"살전","데살로니가후서":"살후","디모데전서":"딤전","디모데후서":"딤후","디도서":"딛","빌레몬서":"몬","히브리서":"히","야고보서":"약","베드로전서":"벧전","베드로후서":"벧후","요한일서":"요일","요한이서":"요이","요한삼서":"요삼","유다서":"유","요한계시록":"계"};
+    const bibleFileCodes = {"창세기":"Gen","출애굽기":"Exo","레위기":"Lev","민수기":"Num","신명기":"Deu","여호수아":"Jos","사사기":"Jdg","루기":"Rut","사무엘상":"1Sa","사무엘하":"2Sa","열왕기상":"1Ki","열왕기하":"2Ki","시편":"Psa","마태복음":"Mat","요한복음":"Jhn","요한계시록":"Rev"}; // 약식
+    
+    let sermons = JSON.parse(localStorage.getItem('sermon_db_v19') || '[]');
+    let activeId = null;
+
+    window.onload = () => {
+        const bSelect = document.getElementById('bBook');
+        Object.keys(bibleAbbrMap).forEach(name => {
+            let opt = document.createElement('option'); opt.value = name; opt.innerText = name;
+            bSelect.appendChild(opt);
+        });
+        updateChapters();
+        renderList();
+    };
+
+    function updateChapters() {
+        const s = document.getElementById('bChap'); s.innerHTML = "";
+        for(let i=1; i<=150; i++) s.innerHTML += `<option value="${i}">${i}장</option>`;
+        loadFullChapter();
+    }
+
+    async function loadFullChapter() {
+        const fileName = document.getElementById('bibleFile').value;
+        const bName = document.getElementById('bBook').value;
+        const chap = document.getElementById('bChap').value;
+        const bCode = bibleFileCodes[bName] || bName.substring(0,3);
+        const viewer = document.getElementById('bibleContent');
+        
+        viewer.innerHTML = "말씀을 불러오는 중...";
+        
+        try {
+            const res = await fetch(`text/${fileName}`);
+            const blob = await res.blob();
+            const reader = new FileReader();
+            reader.onload = () => {
+                const lines = reader.result.split('\\n');
+                const searchKey = `${bCode} ${chap}:`;
+                const chapterVerses = lines.filter(l => l.trim().startsWith(searchKey));
+                
+                if (chapterVerses.length > 0) {
+                    viewer.innerHTML = chapterVerses.map(line => {
+                        const parts = line.split(' ');
+                        const ref = parts[1]; // 1:1
+                        const vNum = ref.split(':')[1];
+                        const text = line.replace(/^[A-Za-z0-9]+\\s\\d+:\\d+\\s+/, '').replace(/^\\d+\\s+/, '');
+                        return `<div class="verse-line" onclick="citeVerse('${text}', '${bName}', ${chap}, ${vNum})">
+                                    <span class="verse-num">${vNum}</span> ${text} 
+                                    <button class="cite-btn">인용</button>
+                                </div>`;
+                    }).join('');
+                } else { viewer.innerHTML = "해당 본문을 찾을 수 없습니다."; }
+            };
+            reader.readAsText(blob, "EUC-KR");
+        } catch(e) { viewer.innerHTML = "성경 파일을 읽을 수 없습니다 (text/ 폴더 확인)."; }
+    }
+
+    function citeVerse(text, book, chap, verse) {
+        const abbr = bibleAbbrMap[book] || book;
+        const formatted = `<br>${text} (${abbr}${chap}:${verse})<br><br>`;
+        document.getElementById('sContent').focus();
+        document.execCommand('insertHTML', false, formatted);
+    }
+
+    // 동기화: 데이터 내보내기
+    function exportData() {
+        const dataStr = JSON.stringify(sermons);
+        const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+        const linkElement = document.createElement('a');
+        linkElement.setAttribute('href', dataUri);
+        linkElement.setAttribute('download', 'sermon_backup.json');
+        linkElement.click();
+    }
+
+    // 동기화: 데이터 가져오기
+    function importData() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.onchange = e => {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = readerEvent => {
+                const content = readerEvent.target.result;
+                if(confirm("기존 데이터가 덮어씌워집니다. 계속할까요?")) {
+                    sermons = JSON.parse(content);
+                    localStorage.setItem('sermon_db_v19', JSON.stringify(sermons));
+                    renderList();
+                    alert("복구가 완료되었습니다.");
+                }
+            }
+            reader.readAsText(file,'UTF-8');
+        }
+        input.click();
+    }
+
+    function saveSermon() {
+        const title = document.getElementById('sTitle').value || "제목 없음";
+        const data = { id: activeId || Date.now(), title, date: new Date().toISOString().split('T')[0], content: document.getElementById('sContent').innerHTML };
+        if(activeId) { const idx = sermons.findIndex(s => s.id === activeId); sermons[idx] = data; }
+        else { sermons.unshift(data); activeId = data.id; }
+        localStorage.setItem('sermon_db_v19', JSON.stringify(sermons));
+        renderList();
+        alert("저장 완료");
+    }
+
+    function renderList() {
+        document.getElementById('sermonList').innerHTML = sermons.map(s => `
+            <div class="sermon-item ${s.id === activeId ? 'active' : ''}" onclick="loadSermon(${s.id})">
+                <div style="font-size:0.7rem; color:#aaa;">${s.date}</div>
+                <div>${s.title}</div>
+            </div>
+        `).join('');
+    }
+
+    function loadSermon(id) {
+        const s = sermons.find(s => s.id === id);
+        if(s) {
+            activeId = s.id;
+            document.getElementById('sTitle').value = s.title;
+            document.getElementById('sContent').innerHTML = s.content;
+            renderList();
+        }
+    }
+
+    function createNew() {
+        activeId = null;
+        document.getElementById('sTitle').value = "";
+        document.getElementById('sContent').innerHTML = "";
+        renderList();
+    }
+
+    function applyStyle() { document.getElementById('sContent').style.fontSize = document.getElementById('fSize').value + 'px'; }
+</script>
+</body>
+</html>
+"""
+
+with open("sermon_master_v1.9.html", "w", encoding="utf-8") as f:
+    f.write(html_content)
